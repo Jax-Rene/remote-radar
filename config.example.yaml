@@ -1,0 +1,16 @@
+fetcher:
+  max_age_days: 30
+  max_pages: 3
+  interval: "0 */2 * * *"
+
+email:
+  host: smtp.example.com
+  port: 587
+  username: user@example.com
+  password: secret
+  from: "notifier@example.com"
+  to:
+    - "you@example.com"
+
+server:
+  addr: ":8080"

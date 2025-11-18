@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Remote Jobs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    button { padding: 8px 12px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Remote Jobs</h1>
+  <button id="refresh">Refresh</button>
+  <table>
+    <thead>
+      <tr><th>Title</th><th>Source</th><th>Link</th></tr>
+    </thead>
+    <tbody id="jobs"></tbody>
+  </table>
+  <script>
+    async function loadJobs() {
+      const res = await fetch('/api/jobs');
+      const data = await res.json();
+      const tbody = document.getElementById('jobs');
+      tbody.innerHTML = '';
+      data.forEach(job => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${job.title}</td><td>${job.source}</td><td><a href="${job.url}" target="_blank">link</a></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    document.getElementById('refresh').onclick = async () => {
+      await fetch('/api/refresh', { method: 'POST' });
+      loadJobs();
+    };
+    loadJobs();
+  </script>
+</body>
+</html>
