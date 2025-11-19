@@ -76,6 +76,10 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		return fmt.Errorf("scheduler missing dependencies")
 	}
 
+	if _, err := s.runOnce(ctx); err != nil {
+		return err
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	tick := s.newTicker(s.interval)

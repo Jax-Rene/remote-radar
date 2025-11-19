@@ -18,6 +18,7 @@ import (
 
 // Config 定义抓取配置。
 type Config struct {
+	BaseURL    string `yaml:"base_url" json:"base_url"`
 	MaxAgeDays int    `yaml:"max_age_days" json:"max_age_days"`
 	MaxPages   int    `yaml:"max_pages" json:"max_pages"`
 	Interval   string `yaml:"interval" json:"interval"`
@@ -35,6 +36,7 @@ type EleduckFetcher struct {
 	client       *http.Client
 	cfg          Config
 	now          func() time.Time
+	userAgent    string
 }
 
 // NewEleduckFetcher 创建电鸭抓取器，baseURL 形如 https://eleduck.com。
@@ -54,6 +56,7 @@ func NewEleduckFetcher(baseURL string, cfg Config, client *http.Client) *Eleduck
 		client:       client,
 		cfg:          cfg,
 		now:          time.Now,
+		userAgent:    "Mozilla/5.0 (compatible; RemoteRadarBot/1.0; +https://github.com/remote-radar)",
 	}
 }
 
@@ -73,6 +76,9 @@ func (e *EleduckFetcher) Fetch(ctx context.Context) ([]model.Job, error) {
 		if err != nil {
 			return nil, fmt.Errorf("new request: %w", err)
 		}
+		req.Header.Set("User-Agent", e.userAgent)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 
 		resp, err := e.client.Do(req)
 		if err != nil {

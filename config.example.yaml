@@ -1,4 +1,5 @@
 fetcher:
+  base_url: https://eleduck.com
   max_age_days: 30
   max_pages: 3
   interval: "0 */2 * * *"

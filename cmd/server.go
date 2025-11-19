@@ -55,8 +55,12 @@ func main() {
 	defer store.Close()
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	fetch := fetcher.NewEleduckFetcher("https://eleduck.com", cfg.Fetcher, client)
-	notif := notifier.NewEmailNotifier(cfg.Email, nil)
+	baseURL := cfg.Fetcher.BaseURL
+	if baseURL == "" {
+		baseURL = "https://eleduck.com"
+	}
+	fetch := fetcher.NewEleduckFetcher(baseURL, cfg.Fetcher, client)
+	notif := buildNotifier(cfg.Email)
 	sched := scheduler.NewScheduler(fetch, store, notif, scheduler.Config{Interval: cfg.Fetcher.Interval, Timeout: "30s"})
 
 	handler := api.NewHandler(storeAdapter{store}, schedulerAdapter{sched})
@@ -101,6 +105,14 @@ func loadConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 	return cfg, nil
+}
+
+func buildNotifier(cfg notifier.EmailConfig) scheduler.Notifier {
+	if cfg.Host == "" || cfg.Port == 0 || cfg.From == "" || len(cfg.To) == 0 {
+		log.Printf("email notifier disabled: missing host/port/from/to")
+		return nil
+	}
+	return notifier.NewEmailNotifier(cfg, nil)
 }
 
 // 适配 API 所需接口。

@@ -74,6 +74,7 @@ type Job struct {
 
 ```yaml
 fetcher:
+  base_url: https://eleduck.com
   max_age_days: 30    # 抓取的最旧天数
   max_pages: 3        # 每次爬取的最大页数
   interval: "0 */2 * * *" # Cron 表达式，示例为每 2 小时一次
@@ -86,10 +87,17 @@ email:
   from: "notifier@example.com"
   to: ["you@example.com"]
 
+database:
+  path: jobs.db
+
 server:
   addr: ":8080"
 
 ```
+
+> **提示**：
+> - 如需在本地离线调试，可以将 `fetcher.base_url` 指向一个模拟电鸭返回的本地 HTTP 服务（例如 `http://127.0.0.1:9000`）。
+> - 如果暂时没有可用的 SMTP 服务，可以将 `email.host`、`email.from` 或 `email.to` 之一留空，服务会自动跳过邮件通知，只写入数据库，避免定时任务因为无法发送邮件而失败。
 
 ## 使用方式
 
