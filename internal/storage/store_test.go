@@ -38,6 +38,9 @@ func TestStoreUpsertAndList(t *testing.T) {
 			Source:      "eleduck",
 			URL:         "https://example.com/1",
 			Tags:        datatypes.JSONMap{"mode": "远程工作"},
+			RawAttributes: datatypes.JSONMap{
+				"origin_id": "1",
+			},
 		},
 		{
 			ID:          "2",
@@ -47,6 +50,9 @@ func TestStoreUpsertAndList(t *testing.T) {
 			Source:      "eleduck",
 			URL:         "https://example.com/2",
 			Tags:        datatypes.JSONMap{"mode": "远程工作"},
+			RawAttributes: datatypes.JSONMap{
+				"origin_id": "2",
+			},
 		},
 	}
 
@@ -71,7 +77,7 @@ func TestStoreUpsertAndList(t *testing.T) {
 		t.Fatalf("expected 0 newly created jobs on second upsert, got %d", res.Created)
 	}
 
-	got, err := store.ListJobs(ctx, 10)
+	got, err := store.ListJobs(ctx, 10, 0)
 	if err != nil {
 		t.Fatalf("ListJobs error: %v", err)
 	}
@@ -83,6 +89,25 @@ func TestStoreUpsertAndList(t *testing.T) {
 	}
 	if got[0].Title != "Senior Frontend Engineer" {
 		t.Fatalf("expected updated title to persist, got %s", got[0].Title)
+	}
+	if got[0].RawAttributes["origin_id"] != "2" {
+		t.Fatalf("expected raw attributes stored for latest job, got %#v", got[0].RawAttributes)
+	}
+
+	paged, err := store.ListJobs(ctx, 1, 1)
+	if err != nil {
+		t.Fatalf("ListJobs with offset error: %v", err)
+	}
+	if len(paged) != 1 || paged[0].ID != "1" {
+		t.Fatalf("expected second job when offset=1, got %+v", paged)
+	}
+
+	total, err := store.CountJobs(ctx)
+	if err != nil {
+		t.Fatalf("CountJobs error: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected total 2 jobs, got %d", total)
 	}
 }
 
@@ -107,6 +132,9 @@ func TestGetJobByID(t *testing.T) {
 		Source:      "eleduck",
 		URL:         "https://example.com/abc",
 		Tags:        datatypes.JSONMap{"mode": "远程工作"},
+		RawAttributes: datatypes.JSONMap{
+			"origin_id": "abc",
+		},
 	}
 
 	res, err := store.UpsertJobs(ctx, []model.Job{job})
@@ -126,5 +154,8 @@ func TestGetJobByID(t *testing.T) {
 	}
 	if fetched.Title != job.Title {
 		t.Fatalf("expected title %s, got %s", job.Title, fetched.Title)
+	}
+	if fetched.RawAttributes["origin_id"] != "abc" {
+		t.Fatalf("expected raw attributes stored, got %#v", fetched.RawAttributes)
 	}
 }

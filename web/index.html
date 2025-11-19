@@ -1,41 +1,174 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <title>Remote Jobs</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    button { padding: 8px 12px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-    th, td { border: 1px solid #ddd; padding: 8px; }
+    :root {
+      color-scheme: light;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      background: #0f172a;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #1e3a8a 0%, #0f172a 55%, #020617 100%);
+      color: #e2e8f0;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px 64px;
+    }
+    .page {
+      width: min(1200px, 100%);
+    }
+    h1 {
+      font-size: 32px;
+      margin: 0 0 12px;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: #94a3b8;
+      margin-bottom: 24px;
+    }
+    button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.1s ease, opacity 0.2s;
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.35);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.85);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: 0 25px 60px rgba(2, 6, 23, 0.65);
+      backdrop-filter: blur(18px);
+    }
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 16px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: transparent;
+    }
+    th, td {
+      padding: 12px 10px;
+      text-align: left;
+    }
+    th {
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    tbody tr {
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+    td {
+      color: #f8fafc;
+      font-size: 15px;
+    }
+    .summary-cell {
+      max-width: 360px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #cbd5f5;
+    }
+    .published-cell {
+      min-width: 170px;
+      color: #cbd5f5;
+    }
+    .tags-cell {
+      min-width: 200px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      margin: 2px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .table-footer {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-top: 1px solid rgba(148, 163, 184, 0.2);
+      padding-top: 16px;
+    }
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .page-indicator {
+      font-weight: 600;
+      color: #cbd5f5;
+    }
+    .total-indicator {
+      color: #a5b4fc;
+      font-size: 14px;
+      letter-spacing: 0.03em;
+    }
   </style>
 </head>
 <body>
-  <h1>Remote Jobs</h1>
-  <button id="refresh">Refresh</button>
-  <table>
-    <thead>
-      <tr><th>Title</th><th>Source</th><th>Link</th></tr>
-    </thead>
-    <tbody id="jobs"></tbody>
-  </table>
-  <script>
-    async function loadJobs() {
-      const res = await fetch('/api/jobs');
-      const data = await res.json();
-      const tbody = document.getElementById('jobs');
-      tbody.innerHTML = '';
-      data.forEach(job => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${job.title}</td><td>${job.source}</td><td><a href="${job.url}" target="_blank">link</a></td>`;
-        tbody.appendChild(tr);
-      });
-    }
-    document.getElementById('refresh').onclick = async () => {
-      await fetch('/api/refresh', { method: 'POST' });
-      loadJobs();
-    };
-    loadJobs();
-  </script>
+  <div class="page">
+    <h1>Remote Radar</h1>
+    <p class="subtitle">最新远程岗位 & 人才线索，一键刷新</p>
+    <div class="card">
+      <div class="actions">
+        <button id="refresh">手动刷新</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Description</th>
+            <th>Published</th>
+            <th>Tags</th>
+            <th>Source</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody id="jobs"></tbody>
+      </table>
+      <div class="table-footer">
+        <span id="total-indicator" class="total-indicator">共 0 条记录</span>
+        <div class="pagination">
+          <button id="prev-page">上一页</button>
+          <span id="page-indicator" class="page-indicator">第 1 / 1 页</span>
+          <button id="next-page">下一页</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

@@ -86,6 +86,9 @@ email:
   from: "notifier@example.com"
   to: ["you@example.com"]
 
+notifier:
+  driver: email # email 或 log
+
 server:
   addr: ":8080"
 
@@ -110,7 +113,15 @@ go mod tidy
 make run
 ```
 
+如需立即触发一次抓取而不等待定时任务，可使用：
+
+```bash
+make run-once
+```
+
 4. **访问前端**：启动服务后，在浏览器中打开 `http://localhost:8080` 查看职位列表。
+
+开发阶段若无需真实发信，可将 `config.yaml` 中的 `notifier.driver` 设置为 `log`，系统会在控制台打印新增职位。
 
 ## 扩展开发
 

@@ -90,7 +90,7 @@ func (s *Store) UpsertJobs(ctx context.Context, jobs []model.Job) (UpsertResult,
 
 	tx := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "summary", "published_at", "source", "url", "tags", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"title", "summary", "published_at", "source", "url", "tags", "raw_attributes", "updated_at"}),
 	}).Create(&jobs)
 	if tx.Error != nil {
 		return res, fmt.Errorf("upsert jobs: %w", tx.Error)
@@ -99,10 +99,16 @@ func (s *Store) UpsertJobs(ctx context.Context, jobs []model.Job) (UpsertResult,
 	return res, nil
 }
 
-// ListJobs 返回按发布时间倒序的职位列表，可指定 limit；limit<=0 时返回全部。
-func (s *Store) ListJobs(ctx context.Context, limit int) ([]model.Job, error) {
+// ListJobs 返回按发布时间倒序的职位列表，支持 limit 与 offset。
+func (s *Store) ListJobs(ctx context.Context, limit, offset int) ([]model.Job, error) {
 	var jobs []model.Job
+	if offset < 0 {
+		offset = 0
+	}
 	query := s.db.WithContext(ctx).Order("published_at DESC")
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -110,6 +116,15 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]model.Job, error) {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
 	return jobs, nil
+}
+
+// CountJobs 返回职位总数。
+func (s *Store) CountJobs(ctx context.Context) (int64, error) {
+	var total int64
+	if err := s.db.WithContext(ctx).Model(&model.Job{}).Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("count jobs: %w", err)
+	}
+	return total, nil
 }
 
 // GetJob 根据 ID 获取职位。

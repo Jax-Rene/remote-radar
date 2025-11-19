@@ -15,13 +15,14 @@ import (
 // - CreatedAt/UpdatedAt: 由 GORM 自动维护
 
 type Job struct {
-	ID          string            `gorm:"primaryKey" json:"id"`
-	Title       string            `json:"title"`
-	Summary     string            `json:"summary"`
-	PublishedAt time.Time         `json:"published_at"`
-	Source      string            `json:"source"`
-	URL         string            `json:"url"`
-	Tags        datatypes.JSONMap `json:"tags"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ID            string            `gorm:"primaryKey" json:"id"`
+	Title         string            `json:"title"`
+	Summary       string            `json:"summary"`
+	PublishedAt   time.Time         `json:"published_at"`
+	Source        string            `json:"source"`
+	URL           string            `json:"url"`
+	Tags          datatypes.JSONMap `json:"tags"`
+	RawAttributes datatypes.JSONMap `json:"raw_attributes"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
 }
