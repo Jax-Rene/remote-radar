@@ -22,9 +22,20 @@
       width: min(1200px, 100%);
     }
     h1 {
-      font-size: 32px;
+      font-size: 34px;
       margin: 0 0 12px;
-      font-weight: 700;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      background: linear-gradient(120deg, #60a5fa, #a855f7, #f472b6, #60a5fa);
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: radarGlow 6s ease infinite;
+    }
+    @keyframes radarGlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
     }
     .subtitle {
       color: #94a3b8;
