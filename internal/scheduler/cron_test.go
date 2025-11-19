@@ -36,6 +36,34 @@ func TestSchedulerRunOnce(t *testing.T) {
 	}
 }
 
+func TestSchedulerStartRunsImmediately(t *testing.T) {
+	t.Parallel()
+
+	f := &stubFetcher{jobs: []model.Job{{ID: "init"}}}
+	s := &stubStore{}
+	st := &stubTicker{ch: make(chan time.Time)}
+
+	sched := NewScheduler(f, s, nil, Config{Interval: "1h", Timeout: "5s"})
+	sched.newTicker = func(d time.Duration) ticker { return st }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = sched.Start(ctx)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	if f.calls.Load() == 0 || s.calls.Load() == 0 {
+		t.Fatalf("expected immediate run on start, got fetch %d store %d", f.calls.Load(), s.calls.Load())
+	}
+
+	cancel()
+	<-done
+}
+
 func TestSchedulerNoOverlap(t *testing.T) {
 	t.Parallel()
 
@@ -75,11 +103,11 @@ func TestSchedulerNoOverlap(t *testing.T) {
 	cancel()
 	<-done
 
-	if f.calls.Load() != 1 {
-		t.Fatalf("expected fetcher called once due to overlap prevention, got %d", f.calls.Load())
+	if f.calls.Load() != 2 { // initial run + one tick despite overlap
+		t.Fatalf("expected fetcher called twice (initial + tick), got %d", f.calls.Load())
 	}
-	if s.calls.Load() != 1 {
-		t.Fatalf("expected store called once, got %d", s.calls.Load())
+	if s.calls.Load() != 2 {
+		t.Fatalf("expected store called twice, got %d", s.calls.Load())
 	}
 }
 

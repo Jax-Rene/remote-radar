@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <title>电鸭 - 远程职位</title>
+</head>
+<body>
+  <div id="__next"></div>
+  <script id="__NEXT_DATA__" type="application/json">
+  {"props":{"pageProps":{"postList":{"posts":[
+    {"id":123456,"title":"高级 Go 开发","summary":"全职远程","excerpt":"","publishedAt":"2025-11-18T08:00:00+08:00","tags":[{"name":"远程工作"},{"name":"全职"}],"url":"/jobs/123456"},
+    {"id":789012,"title":"前端工程师","summary":"React/TypeScript","excerpt":"","publishedAt":"2025-11-17T12:00:00+08:00","tags":[{"name":"远程工作"},{"name":"前端"}],"url":"/jobs/789012"}
+  ]}}}}
+  </script>
+</body>
+</html>
