@@ -19,19 +19,23 @@ import (
 	"remote-radar/internal/fetcher"
 	"remote-radar/internal/model"
 	"remote-radar/internal/notifier"
+	"remote-radar/internal/processor"
 	"remote-radar/internal/scheduler"
 	"remote-radar/internal/storage"
+	"remote-radar/internal/subscription"
 
 	"golang.org/x/sync/errgroup"
 )
 
 // AppConfig 应用配置。
 type AppConfig struct {
-	Fetcher  fetcher.Config       `yaml:"fetcher"`
-	Email    notifier.EmailConfig `yaml:"email"`
-	Notifier NotifierConfig       `yaml:"notifier"`
-	Server   ServerConfig         `yaml:"server"`
-	Database DatabaseConfig       `yaml:"database"`
+	Fetcher      fetcher.Config       `yaml:"fetcher"`
+	Email        notifier.EmailConfig `yaml:"email"`
+	Notifier     NotifierConfig       `yaml:"notifier"`
+	Server       ServerConfig         `yaml:"server"`
+	Database     DatabaseConfig       `yaml:"database"`
+	Processor    processor.Config     `yaml:"processor"`
+	Subscription subscription.Config  `yaml:"subscription"`
 }
 
 type ServerConfig struct {
@@ -62,6 +66,7 @@ type serverRunner interface {
 type appDeps struct {
 	store *storage.Store
 	sched schedulerRunner
+	proc  processor.JobProcessor
 }
 
 func main() {
@@ -92,7 +97,16 @@ func main() {
 	}
 	defer cleanup()
 
-	handler := api.NewHandler(storeAdapter{deps.store}, schedulerAdapter{deps.sched})
+	subSvc := subscription.NewService(deps.store, subscription.Config{AllowedChannels: cfg.Subscription.AllowedChannels, TagCandidates: cfg.Processor.TagCandidates})
+	metaData := api.MetaResponse{
+		TagCandidates:   cfg.Processor.TagCandidates,
+		EmploymentTypes: cfg.Processor.EmploymentTypes,
+		SalaryRanges:    cfg.Processor.SalaryRanges,
+		RoleCategories:  cfg.Processor.RoleCategories,
+		LanguageOptions: cfg.Processor.LanguageOptions,
+		Channels:        cfg.Subscription.AllowedChannels,
+	}
+	handler := api.NewHandler(storeAdapter{store: deps.store}, schedulerAdapter{deps.sched}, metaProvider{metaData}, subscriptionAdapter{subSvc})
 
 	addr := cfg.Server.Addr
 	if addr == "" {
@@ -181,28 +195,26 @@ func buildApp(cfg AppConfig) (appDeps, func(), error) {
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	fetch := fetcher.NewEleduckFetcher("https://eleduck.com", cfg.Fetcher, client)
-	notif := selectNotifier(cfg)
-	sched := scheduler.NewScheduler(fetch, store, notif, scheduler.Config{Interval: cfg.Fetcher.Interval, Timeout: "30s"})
+	llm := processor.NewDeepseekClient(resolveDeepseekConfig(cfg.Processor.Deepseek), nil)
+	proc := processor.New(cfg.Processor, llm)
+	notif := selectNotifier(cfg, store)
+	sched := scheduler.NewScheduler(fetch, store, proc, notif, scheduler.Config{Interval: cfg.Fetcher.Interval, Timeout: "30s", ProcessorBatchSize: cfg.Processor.BatchSize})
 
-	return appDeps{store: store, sched: sched}, cleanup, nil
+	return appDeps{store: store, sched: sched, proc: proc}, cleanup, nil
 }
 
 // selectNotifier 根据配置决定使用哪种通知方式。
-func selectNotifier(cfg AppConfig) scheduler.Notifier {
+func selectNotifier(cfg AppConfig, store *storage.Store) scheduler.Notifier {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Notifier.Driver))
-	switch driver {
-	case "log":
-		return notifier.NewLogNotifier(nil)
-	case "", "email":
-		if cfg.Email.Host == "" || cfg.Email.From == "" || len(cfg.Email.To) == 0 {
-			log.Printf("email config incomplete, fallback to log notifier")
-			return notifier.NewLogNotifier(nil)
-		}
-		return notifier.NewEmailNotifier(cfg.Email, nil)
-	default:
-		log.Printf("unknown notifier driver %q, fallback to log notifier", driver)
-		return notifier.NewLogNotifier(nil)
+	fallback := notifier.NewLogNotifier(nil)
+	if driver == "log" {
+		return fallback
 	}
+	if driver == "email" && (cfg.Email.Host == "" || cfg.Email.From == "") {
+		log.Printf("email config incomplete, fallback to log notifier")
+		return fallback
+	}
+	return notifier.NewSubscriptionNotifier(store, cfg.Email, nil, fallback)
 }
 
 func loadConfig() (AppConfig, error) {
@@ -226,12 +238,12 @@ type storeAdapter struct {
 	store *storage.Store
 }
 
-func (s storeAdapter) ListJobs(_ *http.Request, limit, offset int) ([]model.Job, error) {
-	return s.store.ListJobs(context.Background(), limit, offset)
+func (s storeAdapter) ListJobs(r *http.Request, limit, offset int) ([]model.Job, error) {
+	return s.store.ListJobs(context.Background(), buildJobQuery(r, limit, offset))
 }
 
-func (s storeAdapter) CountJobs(_ *http.Request) (int64, error) {
-	return s.store.CountJobs(context.Background())
+func (s storeAdapter) CountJobs(r *http.Request) (int64, error) {
+	return s.store.CountJobs(context.Background(), buildJobQuery(r, 0, 0))
 }
 
 type schedulerAdapter struct {
@@ -240,4 +252,72 @@ type schedulerAdapter struct {
 
 func (s schedulerAdapter) RunOnce(_ *http.Request) (int, error) {
 	return s.sched.RunOnce(context.Background())
+}
+
+type metaProvider struct {
+	data api.MetaResponse
+}
+
+func (m metaProvider) Snapshot() api.MetaResponse { return m.data }
+
+type subscriptionAdapter struct {
+	service *subscription.Service
+}
+
+func (s subscriptionAdapter) Create(ctx context.Context, req api.SubscriptionRequest) error {
+	if s.service == nil {
+		return fmt.Errorf("subscription disabled")
+	}
+	_, err := s.service.Create(ctx, subscription.Request{Email: req.Email, Channel: req.Channel, Tags: req.Tags})
+	return err
+}
+
+func buildJobQuery(r *http.Request, limit, offset int) storage.JobQueryOptions {
+	opts := storage.JobQueryOptions{Limit: limit, Offset: offset}
+	if r == nil {
+		return opts
+	}
+	tags := collectTags(r)
+	if len(tags) > 0 {
+		opts.Tags = tags
+	}
+	return opts
+}
+
+func collectTags(r *http.Request) []string {
+	if r == nil {
+		return nil
+	}
+	values := r.URL.Query()
+	set := make(map[string]struct{})
+	add := func(raw string) {
+		for _, part := range strings.Split(raw, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			set[trimmed] = struct{}{}
+		}
+	}
+	for _, v := range values["tag"] {
+		add(v)
+	}
+	for _, v := range values["tags"] {
+		add(v)
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	tags := make([]string, 0, len(set))
+	for tag := range set {
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+func resolveDeepseekConfig(cfg processor.DeepseekConfig) processor.DeepseekConfig {
+	if cfg.APIKey == "" {
+		cfg.APIKey = os.Getenv("DEEPSEEK_API_KEY")
+	}
+	return cfg
 }

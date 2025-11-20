@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -21,8 +22,35 @@ type Scheduler interface {
 	RunOnce(r *http.Request) (int, error)
 }
 
+// MetaProvider 返回前端元数据。
+type MetaProvider interface {
+	Snapshot() MetaResponse
+}
+
+// SubscriptionService 处理订阅创建。
+type SubscriptionService interface {
+	Create(ctx context.Context, req SubscriptionRequest) error
+}
+
+// MetaResponse 暴露筛选元数据。
+type MetaResponse struct {
+	TagCandidates   []string `json:"tag_candidates"`
+	EmploymentTypes []string `json:"employment_types"`
+	SalaryRanges    []string `json:"salary_ranges"`
+	RoleCategories  []string `json:"role_categories"`
+	LanguageOptions []string `json:"language_options"`
+	Channels        []string `json:"channels"`
+}
+
+// SubscriptionRequest 表示订阅 API 请求。
+type SubscriptionRequest struct {
+	Email   string   `json:"email"`
+	Channel string   `json:"channel"`
+	Tags    []string `json:"tags"`
+}
+
 // NewHandler 构造 HTTP 多路复用器。
-func NewHandler(store Store, sched Scheduler) http.Handler {
+func NewHandler(store Store, sched Scheduler, meta MetaProvider, subs SubscriptionService) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +112,35 @@ func NewHandler(store Store, sched Scheduler) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]int{"created": created})
+	})
+
+	mux.HandleFunc("/api/meta", func(w http.ResponseWriter, r *http.Request) {
+		var data MetaResponse
+		if meta != nil {
+			data = meta.Snapshot()
+		}
+		writeJSON(w, http.StatusOK, data)
+	})
+
+	mux.HandleFunc("/api/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if subs == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "subscription disabled"})
+			return
+		}
+		var req SubscriptionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+			return
+		}
+		if err := subs.Create(r.Context(), req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
 	})
 
 	webFS := http.FileServer(http.Dir("web"))

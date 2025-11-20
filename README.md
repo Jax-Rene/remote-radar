@@ -9,6 +9,8 @@
 - **数据库存储**：使用 **SQLite** 保存职位数据，结合 GORM 自动迁移表结构并完成 CRUD 操作。
 - **邮件通知**：当有新职位产生时，通过配置好的 SMTP 服务发送电子邮件提醒。
 - **Web API 与前端**：使用 Gin 构建 REST API，前端基于 HTMX + AlpineJS + TailwindCSS + Vite，提供职位列表页面并支持刷新。
+- **LLM 归一化 Pipeline**：新增 `raw_jobs` 原始表 + DeepSeek Pipeline，按关键词 + LLM 判定是否为远程岗位并给出标签、岗位类型、薪资区间、语言、星级与技能标签，最终写入 `jobs` 表供展示/推送。
+- **订阅 + 过滤**：前端支持 Tag 筛选，`/api/subscriptions` 接口支持用户输入邮箱/渠道/标签订阅，后端按订阅偏好执行 Log/Email 通知。
 
 ## 技术栈
 
@@ -132,3 +134,13 @@ make run-once
 ## 致谢
 
 本项目的抓取逻辑参考了社区博客的实践，其中指出可以通过解析电鸭页面 `__NEXT_DATA__` 标签中的结构化 JSON 获取帖子列表【249504313504972†L24-L31】。由此实现的抓取方案既简洁又高效。
+
+## 新增 API
+
+- `GET /api/meta`：返回前端渲染所需的 Tag / 岗位类别 / 渠道等枚举列表。
+- `POST /api/subscriptions`：请求体 `{"email":"...","channel":"email|log","tags":["backend"]}`，后端会校验并写入 `subscriptions` 表。
+- `GET /api/jobs?tags=backend,frontend`：按 LLM 归一化标签筛选。
+
+## LLM 配置
+
+在 `config.yaml` 的 `processor` 节点配置 DeepSeek 模型、Prompt、关键词、Tag 候选以及批处理大小，API Key 从 `DEEPSEEK_API_KEY` 环境变量读取。

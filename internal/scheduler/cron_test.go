@@ -8,18 +8,38 @@ import (
 	"time"
 
 	"remote-radar/internal/model"
+	"remote-radar/internal/processor"
 	"remote-radar/internal/storage"
 )
 
-func TestSchedulerRunOnce(t *testing.T) {
+func TestSchedulerRunOnceProcessesRawJobs(t *testing.T) {
 	t.Parallel()
 
-	f := &stubFetcher{
-		jobs: []model.Job{{ID: "1"}, {ID: "2"}},
-	}
-	s := &stubStore{}
+	f := &stubFetcher{jobs: []model.Job{{ID: "raw1", Title: "Job1"}}}
 
-	sched := NewScheduler(f, s, nil, Config{Interval: "1h", Timeout: "5s"})
+	store := &stubStore{}
+	newRaw := model.RawJob{ID: 1, ExternalID: "raw1", Source: "eleduck", Title: "Job1"}
+	backlog := model.RawJob{ID: 2, ExternalID: "raw-legacy", Source: "eleduck", Title: "Legacy"}
+	store.rawUpsertResult = storage.RawUpsertResult{Created: 1, NewJobs: []model.RawJob{newRaw}}
+	store.pending = []model.RawJob{newRaw, backlog}
+	store.jobResult = storage.UpsertResult{Created: 2, NewJobs: []model.Job{{ID: "raw1"}, {ID: "raw-legacy"}}}
+
+	proc := &stubProcessor{
+		results: map[string]processor.Result{
+			"raw1": {
+				Outcome: processor.ResultAccepted,
+				Job:     &model.Job{ID: "raw1", Title: "Job1"},
+			},
+			"raw-legacy": {
+				Outcome: processor.ResultAccepted,
+				Job:     &model.Job{ID: "raw-legacy", Title: "Legacy"},
+			},
+		},
+	}
+
+	n := &stubNotifier{}
+
+	sched := NewScheduler(f, store, proc, n, Config{Interval: "1h", Timeout: "5s", ProcessorBatchSize: 5})
 
 	created, err := sched.RunOnce(context.Background())
 	if err != nil {
@@ -28,11 +48,14 @@ func TestSchedulerRunOnce(t *testing.T) {
 	if created != 2 {
 		t.Fatalf("expected 2 created jobs, got %d", created)
 	}
-	if f.calls.Load() != 1 {
-		t.Fatalf("expected fetcher called once, got %d", f.calls.Load())
+	if store.upsertCalls.Load() != 1 {
+		t.Fatalf("expected final job upsert called once, got %d", store.upsertCalls.Load())
 	}
-	if s.calls.Load() != 1 {
-		t.Fatalf("expected store called once, got %d", s.calls.Load())
+	if len(store.statusUpdates) != 2 {
+		t.Fatalf("expected two status updates, got %d", len(store.statusUpdates))
+	}
+	if n.calls.Load() != 1 {
+		t.Fatalf("expected notifier called once, got %d", n.calls.Load())
 	}
 }
 
@@ -43,13 +66,18 @@ func TestSchedulerNoOverlap(t *testing.T) {
 	st := &stubTicker{ch: tickCh}
 
 	f := &stubFetcher{
-		jobs:  []model.Job{{ID: "1"}},
+		jobs:  []model.Job{{ID: "x"}},
 		block: make(chan struct{}),
 	}
-	s := &stubStore{}
+	store := &stubStore{jobResult: storage.UpsertResult{Created: 1, NewJobs: []model.Job{{ID: "x"}}}, pending: []model.RawJob{{ID: 1, ExternalID: "x", Source: "eleduck"}}}
+	proc := &stubProcessor{
+		results: map[string]processor.Result{
+			"x": {Outcome: processor.ResultAccepted, Job: &model.Job{ID: "x"}},
+		},
+	}
 
-	sched := NewScheduler(f, s, nil, Config{Interval: "100ms", Timeout: "5s"})
-	sched.newTicker = func(d time.Duration) ticker { return st }
+	sched := NewScheduler(f, store, proc, nil, Config{Interval: "100ms", Timeout: "5s", ProcessorBatchSize: 1})
+	sched.newTicker = func(time.Duration) ticker { return st }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -60,17 +88,13 @@ func TestSchedulerNoOverlap(t *testing.T) {
 		_ = sched.Start(ctx)
 	}()
 
-	// Trigger first tick; fetcher blocks until we release.
 	tickCh <- time.Now()
 	time.Sleep(20 * time.Millisecond)
 
-	// Trigger second tick while first run is still in progress.
 	tickCh <- time.Now()
 
-	// Allow first run to finish.
 	close(f.block)
 
-	// Wait for scheduler to process and then stop.
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 	<-done
@@ -78,31 +102,48 @@ func TestSchedulerNoOverlap(t *testing.T) {
 	if f.calls.Load() != 1 {
 		t.Fatalf("expected fetcher called once due to overlap prevention, got %d", f.calls.Load())
 	}
-	if s.calls.Load() != 1 {
-		t.Fatalf("expected store called once, got %d", s.calls.Load())
+	if store.upsertCalls.Load() != 1 {
+		t.Fatalf("expected store upsert called once, got %d", store.upsertCalls.Load())
 	}
 }
 
-func TestSchedulerNotifiesNewJobs(t *testing.T) {
+func TestSchedulerNotifiesOnlyWhenNewJobs(t *testing.T) {
 	t.Parallel()
 
-	f := &stubFetcher{
-		jobs: []model.Job{{ID: "n1"}},
+	f := &stubFetcher{jobs: []model.Job{{ID: "notify"}}}
+	store := &stubStore{}
+	store.rawUpsertResult = storage.RawUpsertResult{Created: 1, NewJobs: []model.RawJob{{ID: 1, ExternalID: "notify", Source: "eleduck", Title: "Notify"}}}
+	store.pending = []model.RawJob{{ID: 1, ExternalID: "notify", Source: "eleduck", Title: "Notify"}}
+	store.jobResult = storage.UpsertResult{Created: 1, NewJobs: []model.Job{{ID: "notify"}}}
+
+	proc := &stubProcessor{
+		results: map[string]processor.Result{
+			"notify": {Outcome: processor.ResultAccepted, Job: &model.Job{ID: "notify"}},
+		},
 	}
-	s := &stubStore{}
 	n := &stubNotifier{}
 
-	sched := NewScheduler(f, s, n, Config{Interval: "1h", Timeout: "5s"})
+	sched := NewScheduler(f, store, proc, n, Config{Interval: "1h", Timeout: "5s", ProcessorBatchSize: 2})
 
 	created, err := sched.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce error: %v", err)
 	}
 	if created != 1 {
-		t.Fatalf("expected 1 created, got %d", created)
+		t.Fatalf("expected 1 created job, got %d", created)
 	}
 	if n.calls.Load() != 1 {
-		t.Fatalf("expected notifier called once, got %d", n.calls.Load())
+		t.Fatalf("expected notifier called once when new jobs exist, got %d", n.calls.Load())
+	}
+
+	// No new jobs second call -> notifier should not fire.
+	store.jobResult = storage.UpsertResult{Created: 0, NewJobs: nil}
+	created, err = sched.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce second call error: %v", err)
+	}
+	if created != 0 {
+		t.Fatalf("expected 0 created on second run, got %d", created)
 	}
 }
 
@@ -124,18 +165,53 @@ func (s *stubFetcher) Fetch(ctx context.Context) ([]model.Job, error) {
 }
 
 type stubStore struct {
-	calls atomic.Int32
-	mu    sync.Mutex
-	saved []model.Job
-	err   error
+	rawUpsertResult storage.RawUpsertResult
+	jobResult       storage.UpsertResult
+	pending         []model.RawJob
+	statusUpdates   []statusRecord
+	upsertCalls     atomic.Int32
+	mu              sync.Mutex
+}
+
+type statusRecord struct {
+	id     uint
+	update storage.RawJobStatusUpdate
+}
+
+func (s *stubStore) UpsertRawJobs(ctx context.Context, jobs []model.RawJob) (storage.RawUpsertResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rawUpsertResult, nil
+}
+
+func (s *stubStore) ListRawJobs(ctx context.Context, q storage.RawJobQuery) ([]model.RawJob, error) {
+	return append([]model.RawJob(nil), s.pending...), nil
+}
+
+func (s *stubStore) UpdateRawJobStatus(ctx context.Context, id uint, update storage.RawJobStatusUpdate) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.statusUpdates = append(s.statusUpdates, statusRecord{id: id, update: update})
+	return nil
 }
 
 func (s *stubStore) UpsertJobs(ctx context.Context, jobs []model.Job) (storage.UpsertResult, error) {
-	s.calls.Add(1)
+	s.upsertCalls.Add(1)
+	return s.jobResult, nil
+}
+
+type stubProcessor struct {
+	mu      sync.Mutex
+	results map[string]processor.Result
+}
+
+func (s *stubProcessor) Process(ctx context.Context, raw model.RawJob) (processor.Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.saved = append(s.saved, jobs...)
-	return storage.UpsertResult{Created: len(jobs), NewJobs: jobs}, s.err
+	if res, ok := s.results[raw.ExternalID]; ok {
+		return res, nil
+	}
+	return processor.Result{Outcome: processor.ResultRejected, Reason: "missing"}, nil
 }
 
 type stubTicker struct {

@@ -67,7 +67,6 @@ func TestStoreUpsertAndList(t *testing.T) {
 		t.Fatalf("expected 2 new jobs returned, got %d", len(res.NewJobs))
 	}
 
-	// Re-upsert with updated title to ensure we update existing rows but do not count as new.
 	jobs[1].Title = "Senior Frontend Engineer"
 	res, err = store.UpsertJobs(ctx, jobs)
 	if err != nil {
@@ -77,14 +76,14 @@ func TestStoreUpsertAndList(t *testing.T) {
 		t.Fatalf("expected 0 newly created jobs on second upsert, got %d", res.Created)
 	}
 
-	got, err := store.ListJobs(ctx, 10, 0)
+	got, err := store.ListJobs(ctx, JobQueryOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListJobs error: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("expected 2 jobs, got %d", len(got))
 	}
-	if got[0].ID != "2" { // should be ordered by PublishedAt desc
+	if got[0].ID != "2" {
 		t.Fatalf("expected most recent job ID '2', got %s", got[0].ID)
 	}
 	if got[0].Title != "Senior Frontend Engineer" {
@@ -94,7 +93,7 @@ func TestStoreUpsertAndList(t *testing.T) {
 		t.Fatalf("expected raw attributes stored for latest job, got %#v", got[0].RawAttributes)
 	}
 
-	paged, err := store.ListJobs(ctx, 1, 1)
+	paged, err := store.ListJobs(ctx, JobQueryOptions{Limit: 1, Offset: 1})
 	if err != nil {
 		t.Fatalf("ListJobs with offset error: %v", err)
 	}
@@ -102,7 +101,7 @@ func TestStoreUpsertAndList(t *testing.T) {
 		t.Fatalf("expected second job when offset=1, got %+v", paged)
 	}
 
-	total, err := store.CountJobs(ctx)
+	total, err := store.CountJobs(ctx, JobQueryOptions{})
 	if err != nil {
 		t.Fatalf("CountJobs error: %v", err)
 	}
@@ -157,5 +156,110 @@ func TestGetJobByID(t *testing.T) {
 	}
 	if fetched.RawAttributes["origin_id"] != "abc" {
 		t.Fatalf("expected raw attributes stored, got %#v", fetched.RawAttributes)
+	}
+}
+
+func TestListJobsFiltersByNormalizedTags(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	store, err := NewStore(filepath.Join(tmp, "jobs.db"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	jobs := []model.Job{
+		{ID: "tag1", Title: "Backend", PublishedAt: time.Now(), Source: "eleduck", NormalizedTags: datatypes.JSONMap{"backend": true, "go": true}},
+		{ID: "tag2", Title: "Frontend", PublishedAt: time.Now().Add(-time.Hour), Source: "eleduck", NormalizedTags: datatypes.JSONMap{"frontend": true}},
+	}
+	if _, err := store.UpsertJobs(ctx, jobs); err != nil {
+		t.Fatalf("UpsertJobs error: %v", err)
+	}
+
+	filtered, err := store.ListJobs(ctx, JobQueryOptions{Tags: []string{"backend"}})
+	if err != nil {
+		t.Fatalf("ListJobs filter error: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != "tag1" {
+		t.Fatalf("expected backend job returned, got %+v", filtered)
+	}
+
+	total, err := store.CountJobs(ctx, JobQueryOptions{Tags: []string{"frontend"}})
+	if err != nil {
+		t.Fatalf("CountJobs filter error: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total 1 for frontend filter, got %d", total)
+	}
+}
+
+func TestRawJobLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	store, err := NewStore(filepath.Join(tmp, "jobs.db"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	res, err := store.UpsertRawJobs(ctx, []model.RawJob{{Source: "eleduck", ExternalID: "raw-1", Title: "Raw", PublishedAt: time.Now()}})
+	if err != nil {
+		t.Fatalf("UpsertRawJobs error: %v", err)
+	}
+	if res.Created != 1 || len(res.NewJobs) != 1 {
+		t.Fatalf("expected 1 new raw job, got %+v", res)
+	}
+
+	pending, err := store.ListRawJobs(ctx, RawJobQuery{Status: model.RawJobStatusPending, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRawJobs error: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected pending job, got %+v", pending)
+	}
+
+	update := RawJobStatusUpdate{Status: model.RawJobStatusProcessed, Details: datatypes.JSONMap{"score": 5}}
+	if err := store.UpdateRawJobStatus(ctx, pending[0].ID, update); err != nil {
+		t.Fatalf("UpdateRawJobStatus error: %v", err)
+	}
+
+	pending, err = store.ListRawJobs(ctx, RawJobQuery{Status: model.RawJobStatusPending})
+	if err != nil {
+		t.Fatalf("ListRawJobs after update error: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("expected no pending jobs, got %+v", pending)
+	}
+}
+
+func TestSubscriptionCreateAndList(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	store, err := NewStore(filepath.Join(tmp, "jobs.db"))
+	if err != nil {
+		t.Fatalf("NewStore error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	sub := model.Subscription{Email: "user@example.com", Channel: "email", Tags: datatypes.JSONMap{"backend": true}}
+	if err := store.CreateSubscription(ctx, &sub); err != nil {
+		t.Fatalf("CreateSubscription error: %v", err)
+	}
+	if sub.ID == 0 {
+		t.Fatalf("expected subscription ID assigned")
+	}
+
+	subs, err := store.ListSubscriptions(ctx)
+	if err != nil {
+		t.Fatalf("ListSubscriptions error: %v", err)
+	}
+	if len(subs) != 1 || subs[0].Email != sub.Email {
+		t.Fatalf("expected stored subscription returned, got %+v", subs)
 	}
 }

@@ -1,22 +1,60 @@
 fetcher:
-  max_age_days: 30
-  max_pages: 3
-  interval: "0 */2 * * *"
-  category_paths:
-    - "/categories/5?sort=new"
-    - "/categories/22?sort=new"
+    max_age_days: 30
+    max_pages: 3
+    interval: "0 */2 * * *"
+    category_paths:
+        - "/categories/5?sort=new"
+        - "/categories/22?sort=new"
 
 email:
-  host: smtp.example.com
-  port: 587
-  username: user@example.com
-  password: secret
-  from: "notifier@example.com"
-  to:
-    - "you@example.com"
+    host: smtp.example.com
+    port: 587
+    username: user@example.com
+    password: secret
+    from: "notifier@example.com"
+    to:
+        - "you@example.com"
 
 notifier:
-  driver: log
+    driver: log
 
 server:
-  addr: ":8080"
+    addr: ":8080"
+
+processor:
+    keywords:
+        - "远程"
+        - "remote"
+    prompt_template: |
+        你是资深 HR，请分析以下职位文本并输出结论：{{TEXT}}。可选标签：{{TAGS}}。
+    tag_candidates:
+        - "后端开发工程师"
+        - "前端开发工程师"
+        - "全栈开发工程师"
+        - "其他"
+    employment_types:
+        - "全职"
+        - "兼职"
+    salary_ranges:
+        - "<$1000"
+        - "$1000 ~ $5000"
+        - "$5000 ~ $10000"
+        - ">$10000"
+    role_categories:
+        - "后端开发工程师"
+        - "前端开发工程师"
+        - "全栈开发工程师"
+        - "其他"
+    language_options:
+        - "英语"
+        - "日语"
+        - "无"
+    batch_size: 20
+    deepseek:
+        api_base: "https://api.deepseek.com/v1"
+        model: "deepseek-chat"
+
+subscription:
+    allowed_channels:
+        - "email"
+        - "log"
