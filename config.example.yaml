@@ -1,7 +1,7 @@
 fetcher:
     max_age_days: 30
     max_pages: 3
-    interval: "0 */2 * * *"
+    interval: "0 */2 * * *" # 支持 cron 表达式或 Go duration（如 "2h"）
     category_paths:
         - "/categories/5?sort=new"
         - "/categories/22?sort=new"

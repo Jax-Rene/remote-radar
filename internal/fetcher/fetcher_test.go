@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -458,6 +459,10 @@ func TestEleduckFetchCapturesRawAttributes(t *testing.T) {
 }
 
 func TestEleduckFetchRealManual(t *testing.T) {
+	if testing.Short() || os.Getenv("ELEDUCK_LIVE_TEST") == "" {
+		t.Skip("skip live eleduck fetch; set ELEDUCK_LIVE_TEST to run")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
