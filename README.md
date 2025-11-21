@@ -78,7 +78,7 @@ type Job struct {
 fetcher:
   max_age_days: 30    # 抓取的最旧天数
   max_pages: 3        # 每次爬取的最大页数
-  interval: "0 */2 * * *" # Cron 表达式，示例为每 2 小时一次
+  interval: "0 */2 * * *" # 支持标准 5 字段 Cron 表达式或 Go duration（如 "2h"）
 
 email:
   host: smtp.example.com
