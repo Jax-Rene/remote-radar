@@ -155,6 +155,36 @@ export function buildSubscriptionPayload(input = {}) {
     return payload;
 }
 
+function renderChannelOptions(selectEl, channels = []) {
+    if (!selectEl) {
+        return;
+    }
+    const seen = new Set();
+    const normalized = channels
+        .map((value) =>
+            String(value || "")
+                .trim()
+                .toLowerCase(),
+        )
+        .filter(Boolean)
+        .filter((value) => {
+            if (seen.has(value)) {
+                return false;
+            }
+            seen.add(value);
+            return true;
+        });
+    const options = normalized.length > 0 ? normalized : ["email"];
+    selectEl.innerHTML = "";
+    options.forEach((channel) => {
+        const option = document.createElement("option");
+        option.value = channel;
+        option.textContent = channel === "email" ? "邮箱" : channel;
+        selectEl.appendChild(option);
+    });
+    selectEl.value = options[0];
+}
+
 export function setActiveView(activeId, sections = {}) {
     const keys = Object.keys(sections).filter((key) => Boolean(sections[key]));
     if (keys.length === 0) {
@@ -349,16 +379,17 @@ export function initJobsTable({
     const navLinkButtons = viewButtons.filter((button) =>
         button.hasAttribute("data-nav-link"),
     );
-    if (
-        !jobsContainer ||
-        !refreshButton ||
-        !prevBtn ||
-        !nextBtn ||
-        !indicator ||
-        !totalIndicator ||
-        !pageSelect
-    ) {
-        throw new Error("job elements not found");
+    const required = [
+        jobsContainer,
+        prevBtn,
+        nextBtn,
+        indicator,
+        totalIndicator,
+        pageSelect,
+    ];
+    if (required.some((el) => !el)) {
+        console.warn("job elements not found, skip init");
+        return;
     }
 
     const localState = { page: 1, limit: PAGE_SIZE, hasMore: false, total: 0 };
@@ -403,11 +434,15 @@ export function initJobsTable({
         updatePaginationControls();
     }
 
-    refreshButton.addEventListener("click", () =>
-        handleManualRefresh(refreshButton, () =>
-            loadPage(localState.page),
-        ).catch((err) => console.error(err)),
-    );
+    if (refreshButton) {
+        refreshButton.addEventListener("click", () =>
+            handleManualRefresh(refreshButton, () =>
+                loadPage(localState.page),
+            ).catch((err) => console.error(err)),
+        );
+    } else {
+        console.warn("refresh button missing; manual refresh disabled");
+    }
 
     prevBtn.addEventListener("click", () => {
         if (localState.page > 1) {
@@ -498,6 +533,10 @@ export function initJobsTable({
         .then((meta) => {
             state.meta = meta;
             const tagCandidates = meta.tag_candidates || [];
+            renderChannelOptions(
+                subscriptionChannel,
+                Array.isArray(meta.channels) ? meta.channels : [],
+            );
             renderTagSelector(
                 filterContainer,
                 tagCandidates,

@@ -12,7 +12,7 @@ func TestServiceValidatesAndCreatesSubscription(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
-	svc := NewService(store, Config{AllowedChannels: []string{"email", "log"}, TagCandidates: []string{"backend", "frontend"}})
+	svc := NewService(store, Config{AllowedChannels: []string{"email"}, TagCandidates: []string{"backend", "frontend"}})
 
 	req := Request{Email: "user@example.com", Channel: "email", Tags: []string{"backend"}}
 	sub, err := svc.Create(context.Background(), req)

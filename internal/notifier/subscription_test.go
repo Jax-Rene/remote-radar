@@ -21,9 +21,8 @@ func TestSubscriptionNotifierFiltersJobsPerSubscriber(t *testing.T) {
 	}
 
 	emailSender := &stubSender{}
-	logStub := &stubJobNotifier{}
 	cfg := EmailConfig{From: "from@example.com", Host: "smtp", To: []string{"placeholder"}}
-	subNotifier := NewSubscriptionNotifier(store, cfg, emailSender, logStub)
+	subNotifier := NewSubscriptionNotifier(store, cfg, emailSender, nil)
 
 	jobs := []model.Job{
 		{ID: "be", Title: "Backend", NormalizedTags: datatypes.JSONMap{"backend": true}},
@@ -40,8 +39,30 @@ func TestSubscriptionNotifierFiltersJobsPerSubscriber(t *testing.T) {
 	if !strings.Contains(emailSender.lastBody, "Backend") {
 		t.Fatalf("expected backend job in email body, got %s", emailSender.lastBody)
 	}
-	if logStub.calls != 1 || len(logStub.last) != 1 || logStub.last[0].ID != "fe" {
-		t.Fatalf("expected log notifier to receive frontend job, got %+v", logStub.last)
+}
+
+func TestSubscriptionNotifierIgnoresLogChannel(t *testing.T) {
+	t.Parallel()
+
+	store := &stubSubscriptionStore{
+		subs: []model.Subscription{
+			{ID: 1, Email: "log@example.com", Channel: "log", Tags: datatypes.JSONMap{"frontend": true}},
+		},
+	}
+
+	emailSender := &stubSender{}
+	cfg := EmailConfig{From: "from@example.com", Host: "smtp", To: []string{"placeholder"}}
+	subNotifier := NewSubscriptionNotifier(store, cfg, emailSender, nil)
+
+	jobs := []model.Job{
+		{ID: "fe", Title: "Frontend", NormalizedTags: datatypes.JSONMap{"frontend": true}},
+	}
+
+	if err := subNotifier.Notify(context.Background(), jobs); err != nil {
+		t.Fatalf("Notify error: %v", err)
+	}
+	if emailSender.calls != 0 {
+		t.Fatalf("expected email sender not to be called for log channel, got %d", emailSender.calls)
 	}
 }
 

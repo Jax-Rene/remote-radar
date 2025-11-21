@@ -20,25 +20,19 @@ type jobNotifier interface {
 
 // SubscriptionNotifier 会按订阅偏好推送通知。
 type SubscriptionNotifier struct {
-	store      SubscriptionStore
-	emailCfg   EmailConfig
-	sender     EmailSender
-	fallback   jobNotifier
-	logChannel jobNotifier
+	store    SubscriptionStore
+	emailCfg EmailConfig
+	sender   EmailSender
+	fallback jobNotifier
 }
 
 // NewSubscriptionNotifier 创建实例。
 func NewSubscriptionNotifier(store SubscriptionStore, cfg EmailConfig, sender EmailSender, fallback jobNotifier) *SubscriptionNotifier {
-	logCh := fallback
-	if logCh == nil {
-		logCh = NewLogNotifier(nil)
-	}
 	return &SubscriptionNotifier{
-		store:      store,
-		emailCfg:   cfg,
-		sender:     sender,
-		fallback:   fallback,
-		logChannel: logCh,
+		store:    store,
+		emailCfg: cfg,
+		sender:   sender,
+		fallback: fallback,
 	}
 }
 
@@ -65,10 +59,6 @@ func (n *SubscriptionNotifier) Notify(ctx context.Context, jobs []model.Job) err
 			continue
 		}
 		switch strings.ToLower(strings.TrimSpace(sub.Channel)) {
-		case "log":
-			if err := n.logChannel.Notify(ctx, matches); err != nil {
-				return err
-			}
 		case "email", "":
 			cfg := n.emailCfg
 			cfg.To = []string{sub.Email}

@@ -206,15 +206,19 @@ func buildApp(cfg AppConfig) (appDeps, func(), error) {
 // selectNotifier 根据配置决定使用哪种通知方式。
 func selectNotifier(cfg AppConfig, store *storage.Store) scheduler.Notifier {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Notifier.Driver))
-	fallback := notifier.NewLogNotifier(nil)
-	if driver == "log" {
-		return fallback
+	switch driver {
+	case "", "email":
+		if cfg.Email.Host == "" || cfg.Email.From == "" {
+			log.Printf("email config incomplete, notifications disabled")
+			return nil
+		}
+		return notifier.NewSubscriptionNotifier(store, cfg.Email, nil, nil)
+	case "none", "off", "disabled":
+		return nil
+	default:
+		log.Printf("unknown notifier driver %s, notifications disabled", driver)
+		return nil
 	}
-	if driver == "email" && (cfg.Email.Host == "" || cfg.Email.From == "") {
-		log.Printf("email config incomplete, fallback to log notifier")
-		return fallback
-	}
-	return notifier.NewSubscriptionNotifier(store, cfg.Email, nil, fallback)
 }
 
 func loadConfig() (AppConfig, error) {
